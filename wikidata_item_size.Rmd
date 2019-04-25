@@ -1,0 +1,88 @@
+---
+title: "Untitled"
+author: "Egon"
+date: "25 april 2019"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Average size of types in Wikidata
+
+Following up on a question on the scalability of Wikidata, it was said on IRC that one of the
+current bottlenecks is the size of items, and more that than the number of items. We got to
+talk about Wikicite, and I wondered about the size of typical types of items, like a scholarly
+articles, an author, a chemical, a gene, and maybe a book.
+
+While the provenance accounts for a good bit of the size of the Wikidata item, maybe a first
+approach would be the number of statements. We here explore the differences by sampling each
+type and request the number of statements on each. Of course, we need a sample size:
+
+```{r}
+sampleSize = 5000
+allData = c()
+```
+
+## Installing the dependencies
+
+If you do not have them installed, you need to get the following packages:
+
+```{r echo=TRUE}
+library(SPARQL)
+library(ggplot2)
+```
+
+## Helper function
+
+We can define a helper function that uses SPARQL to get the statement counts:
+
+```{r echo=TRUE}
+getCounts <- function(type="Q11173", sampleSize=10, typeClass=1) {
+  query = paste(
+    "SELECT ?statementcount WITH {",
+    "  SELECT DISTINCT ?obj WHERE {",
+    "    ?obj wdt:P31/wdt:P279* wd:", type, " .",
+    "  } LIMIT ", sampleSize,
+    "} AS %objects {",
+    "  INCLUDE %objects",
+    "  ?obj wikibase:statements ?statementcount",
+    "}", sep=""
+  )
+  counts = SPARQL(
+    "https://query.wikidata.org/bigdata/namespace/wdq/sparql",
+    query
+  )$results
+  newData = cbind(rep(typeClass,length(counts)), t(counts))
+  row.names(newData) = c()
+  return(newData)
+}
+```
+
+# General classes
+
+We first sample the number of statements for things in a short series:
+
+```{r echo=TRUE}
+wikidataTypes = data.frame(
+  qids=c("Q11173","Q13442814","Q121594"),
+  labels=c("Compounds", "Articles", "Professors")
+)
+for (i in 1:nrow(wikidataTypes)) {
+  allData = rbind(allData, getCounts(wikidataTypes[i,"qids"], sampleSize, typeClass=i))
+}
+allDF = data.frame(Type=allData[,1], Statements=allData[,2])
+allDF$Type <- factor(allDF$Type, labels = wikidataTypes$labels)
+```
+
+We can the plot the results:
+
+```{r echo=TRUE}
+p10 <- ggplot(allDF, aes(x = Type, y = Statements)) +
+       geom_boxplot(fill="#4271AE", alpha = 0.7) +
+       scale_y_continuous(trans='log2') +
+       scale_x_discrete(name = "Wikidata Types") +
+       geom_jitter(alpha=0.1, size=0.5)
+p10
+```
